@@ -125,6 +125,7 @@ The editor does not bundle CodeMirror directly. Your application must provide `E
 - **Rich Preview** -- Live rendered markdown below each segment with syntax highlighting, mermaid diagrams, and KaTeX math
 - **Formatting Toolbar** -- Bold, italic, code, heading, link, and image buttons that follow your cursor
 - **Image Support** -- Paste, drag, or file-pick images with base64 inline or server-side upload via the `onImageUpload` hook
+- **Video Support** -- Paste or drag a recording; it uploads through the same hook and is inserted as a `video` fence (an upload handler is required, since a video has no sensible inline form)
 - **Data URI Collapse** -- Long base64 image URIs are visually collapsed in the editor without changing the document
 - **Read-Only Mode** -- Toggle editing on or off at runtime with `setReadOnly()`
 - **Rendered View** -- Toggle a full-document read-mode preview that combines all segments

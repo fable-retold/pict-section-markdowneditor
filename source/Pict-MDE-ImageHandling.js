@@ -43,24 +43,47 @@ module.exports.attach = function attach(pView)
 	};
 
 	/**
-	 * Process an image File object from any input method (picker, drag, paste).
+	 * Is this a file the editor can put into a document -- an image or a video?
 	 *
-	 * If the consumer has overridden onImageUpload and it returns true, the
-	 * consumer handles the upload and calls the callback with a URL.
-	 * Otherwise, the image is converted to a base64 data URI inline.
+	 * One test, used by every entry point (picker, drag, paste), so a file that can be dropped can also be
+	 * pasted and vice versa. Anything else is ignored: a dropped PDF is not something markdown can show.
 	 *
-	 * @param {File} pFile - The image File object
+	 * @param {File} pFile
+	 * @returns {boolean}
+	 */
+	pView._isEmbeddableFile = function _isEmbeddableFile(pFile)
+	{
+		if (!pFile || !pFile.type) { return false; }
+		return pFile.type.startsWith('image/') || pFile.type.startsWith('video/');
+	};
+
+	/**
+	 * Process an image or video File object from any input method (picker, drag, paste).
+	 *
+	 * If the consumer has overridden onImageUpload and it returns true, the consumer handles the upload and
+	 * calls the callback with a URL. Otherwise the file is converted to a base64 data URI inline.
+	 *
+	 * NOTE for consumers: onImageUpload now receives VIDEO files as well as images. It always had the File,
+	 * so a consumer that cares can branch on pFile.type; the hook was not split in two because a second hook
+	 * would mean video silently doing nothing until every consumer implemented it.
+	 *
+	 * A video is inserted as a `video` fence rather than the image form, because an uploaded file is usually
+	 * addressed by a blob route with no extension -- and the renderer can only read "this is a video" off an
+	 * extension. The fence says it outright.
+	 *
+	 * @param {File} pFile - The image or video File object
 	 * @param {number} pSegmentIndex - The internal segment index
 	 */
 	pView._processImageFile = function _processImageFile(pFile, pSegmentIndex)
 	{
-		if (!pFile || !pFile.type || !pFile.type.startsWith('image/'))
+		if (!pView._isEmbeddableFile(pFile))
 		{
-			pView.log.warn(`PICT-MarkdownEditor _processImageFile: not an image file (type: ${pFile ? pFile.type : 'null'}).`);
+			pView.log.warn(`PICT-MarkdownEditor _processImageFile: not an image or video file (type: ${pFile ? pFile.type : 'null'}).`);
 			return;
 		}
 
-		let tmpAltText = pFile.name ? pFile.name.replace(/\.[^.]+$/, '') : 'image';
+		let tmpIsVideo = pFile.type.startsWith('video/');
+		let tmpAltText = pFile.name ? pFile.name.replace(/\.[^.]+$/, '') : (tmpIsVideo ? 'video' : 'image');
 
 		// Check if the consumer wants to handle the upload
 		let tmpCallback = (pError, pURL) =>
@@ -72,7 +95,8 @@ module.exports.attach = function attach(pView)
 			}
 			if (pURL)
 			{
-				pView._insertImageMarkdown(pSegmentIndex, pURL, tmpAltText);
+				if (tmpIsVideo) { pView._insertVideoMarkdown(pSegmentIndex, pURL, tmpAltText); }
+				else { pView._insertImageMarkdown(pSegmentIndex, pURL, tmpAltText); }
 			}
 		};
 
@@ -91,6 +115,15 @@ module.exports.attach = function attach(pView)
 			return;
 		}
 
+		// A video has no inline fallback worth having: a base64 data URI of a recording is megabytes of text
+		// pasted into the document, which bloats every save and read of it from then on. Without a consumer
+		// upload handler there is nowhere to put it, so say so rather than wedging the document.
+		if (tmpIsVideo)
+		{
+			pView.log.warn('PICT-MarkdownEditor: a video needs an upload handler (onImageUpload) -- inlining one as a data URI would embed megabytes of base64 in the document.');
+			return;
+		}
+
 		let tmpReader = new FileReader();
 		tmpReader.onload = () =>
 		{
@@ -101,6 +134,40 @@ module.exports.attach = function attach(pView)
 			pView.log.error(`PICT-MarkdownEditor _processImageFile: FileReader error.`);
 		};
 		tmpReader.readAsDataURL(pFile);
+	};
+
+	/**
+	 * Insert a `video` fence at the cursor position in a segment editor.
+	 *
+	 * The fence rather than the image form: an uploaded recording is usually addressed by a blob route with
+	 * no file extension, and the renderer reads "this is a video" off the extension. The fence states it.
+	 *
+	 * @param {number} pSegmentIndex - The internal segment index
+	 * @param {string} pURL - The video URL
+	 * @param {string} [pTitle] - The title line (default: 'video')
+	 */
+	pView._insertVideoMarkdown = function _insertVideoMarkdown(pSegmentIndex, pURL, pTitle)
+	{
+		let tmpEditor = pView._segmentEditors[pSegmentIndex];
+		if (!tmpEditor)
+		{
+			pView.log.warn(`PICT-MarkdownEditor _insertVideoMarkdown: no editor for segment ${pSegmentIndex}.`);
+			return;
+		}
+
+		let tmpTitle = pTitle || 'video';
+		// Sits on its own lines: a fence has to start at the beginning of a line to be a fence at all.
+		let tmpInsert = '\n```video\n' + pURL + '\ntitle: ' + tmpTitle + '\n```\n';
+
+		let tmpState = tmpEditor.state;
+		let tmpCursorPos = tmpState.selection.main.head;
+
+		tmpEditor.dispatch(
+		{
+			changes: { from: tmpCursorPos, insert: tmpInsert },
+			selection: { anchor: tmpCursorPos + tmpInsert.length }
+		});
+		tmpEditor.focus();
 	};
 
 	/**
@@ -250,7 +317,7 @@ module.exports.attach = function attach(pView)
 			}
 
 			let tmpFile = pEvent.dataTransfer.files[0];
-			if (tmpFile.type && tmpFile.type.startsWith('image/'))
+			if (pView._isEmbeddableFile(tmpFile))
 			{
 				pEvent.preventDefault();
 				pEvent.stopPropagation();

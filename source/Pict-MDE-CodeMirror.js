@@ -67,7 +67,8 @@ module.exports.attach = function attach(pView)
 					}
 					for (let i = 0; i < tmpItems.length; i++)
 					{
-						if (tmpItems[i].type.startsWith('image/'))
+						// Paste: a clipboard item is not a File yet, so the type is tested directly.
+						if (tmpItems[i].type.startsWith('image/') || tmpItems[i].type.startsWith('video/'))
 						{
 							pEvent.preventDefault();
 							let tmpFile = tmpItems[i].getAsFile();
@@ -95,7 +96,7 @@ module.exports.attach = function attach(pView)
 						return false;
 					}
 					let tmpFile = pEvent.dataTransfer.files[0];
-					if (tmpFile.type && tmpFile.type.startsWith('image/'))
+					if (pView._isEmbeddableFile(tmpFile))
 					{
 						pEvent.preventDefault();
 						pEvent.stopPropagation();
@@ -307,7 +308,7 @@ module.exports.attach = function attach(pView)
 				return;
 			}
 			let tmpFile = pEvent.dataTransfer.files[0];
-			if (tmpFile.type && tmpFile.type.startsWith('image/'))
+			if (pView._isEmbeddableFile(tmpFile))
 			{
 				pEvent.preventDefault();
 				pEvent.stopPropagation();

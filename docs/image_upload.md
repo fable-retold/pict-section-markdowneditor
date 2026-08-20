@@ -1,14 +1,19 @@
-# Image Upload
+# Image and Video Upload
 
 By default, the markdown editor embeds images as base64 data URIs inline in the markdown. This works for small images but produces bloated documents. For production use, you should override the `onImageUpload` hook to upload images to a server and insert URLs instead.
 
-## Image Ingestion Flow
+**Video goes through the same hook.** A pasted or dropped video file reaches `onImageUpload` exactly as an image does, and your handler tells them apart with `pFile.type`. There is one difference: a video has no inline fallback. Without an upload handler the editor refuses the file and says so, because a base64 data URI of a recording is megabytes of text pasted into the document that every later save and read would carry.
 
-Images enter the editor through three paths:
+## Ingestion Flow
 
-1. **Clipboard paste** -- User pastes an image from clipboard (Ctrl/Cmd+V)
-2. **Drag-and-drop** -- User drags an image file onto a segment
+Images and videos enter the editor through three paths:
+
+1. **Clipboard paste** -- User pastes from the clipboard (Ctrl/Cmd+V)
+2. **Drag-and-drop** -- User drags a file onto a segment
 3. **File picker** -- User clicks the image button in the sidebar
+
+All three ask the same question, `_isEmbeddableFile(pFile)`: an `image/*` or a `video/*` file goes on, and
+anything else is ignored, because markdown has nothing to show for a dropped PDF.
 
 All three paths converge on `_processImageFile(pFile, pSegmentIndex)`, which calls your `onImageUpload` hook:
 
@@ -395,3 +400,26 @@ After:  ![photo](data:image/png;base64,...39kB)
 ```
 
 The collapse is display-only -- the document content is not modified. This extension requires `Decoration`, `ViewPlugin`, and `WidgetType` to be provided through `connectCodeMirrorModules()` or `window.CodeMirrorModules`.
+
+
+## What Gets Inserted
+
+The two kinds are written differently, and the reason is the URL your handler returns.
+
+| File | Inserted |
+|------|----------|
+| Image | `![alt](URL)` |
+| Video | A `video` fence carrying the URL and a `title:` line |
+
+An uploaded file is usually addressed by a blob route with no file extension -- `/1.0/Media/42/Blob` -- and a
+renderer can only read "this is a video" off an extension. The fence states it outright, so the URL does not
+have to. `pict-section-content` renders that fence as a player.
+
+A video whose URL *does* end in `.mp4`, `.webm`, `.ogv`, `.ogg`, `.mov` or `.m4v` can also be written with the
+image form by hand; the renderer treats it as a player either way.
+
+## Upload Size
+
+Your handler decides the limit, and it is the handler's job to report a rejection: the editor logs the error
+it is given but shows nothing on its own. A server that refuses an oversized upload with a 413 should surface
+that to the person who just dropped a 200 MB screen recording, or the file appears to vanish.

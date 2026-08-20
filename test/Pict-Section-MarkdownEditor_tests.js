@@ -509,6 +509,99 @@ suite
 				);
 				test
 				(
+					'_isEmbeddableFile accepts images and videos, and nothing else',
+					(fDone) =>
+					{
+						// One test behind every entry point, so a file that can be dropped can also be
+						// pasted. A dropped PDF is ignored because markdown has nothing to show for it.
+						let tmpPict = configureTestPict();
+						let tmpView = tmpPict.addView('Pict-View-TestMDE-Embeddable', {}, libPictSectionMarkdownEditor);
+						Expect(tmpView._isEmbeddableFile({ type: 'image/png' })).to.equal(true);
+						Expect(tmpView._isEmbeddableFile({ type: 'video/mp4' })).to.equal(true);
+						Expect(tmpView._isEmbeddableFile({ type: 'video/quicktime' })).to.equal(true);
+						Expect(tmpView._isEmbeddableFile({ type: 'application/pdf' })).to.equal(false);
+						Expect(tmpView._isEmbeddableFile({})).to.equal(false);
+						Expect(tmpView._isEmbeddableFile(null)).to.equal(false);
+						return fDone();
+					}
+				);
+				test
+				(
+					'_insertVideoMarkdown writes a video fence, not an image',
+					(fDone) =>
+					{
+						// The fence rather than ![](): an uploaded recording is addressed by a blob route
+						// with no extension, and the renderer can only read "video" off an extension.
+						let tmpPict = configureTestPict();
+						let tmpView = tmpPict.addView('Pict-View-TestMDE-Vid1', {}, libPictSectionMarkdownEditor);
+						let tmpInserted = '';
+						tmpView._segmentEditors[0] =
+						{
+							state: { selection: { main: { head: 0 } } },
+							dispatch: (pTransaction) => { tmpInserted = pTransaction.changes.insert; },
+							focus: () => { }
+						};
+						tmpView._insertVideoMarkdown(0, '/1.0/Media/42/Blob', 'A walkthrough');
+						Expect(tmpInserted).to.contain('```video');
+						Expect(tmpInserted).to.contain('/1.0/Media/42/Blob');
+						Expect(tmpInserted).to.contain('title: A walkthrough');
+						Expect(tmpInserted.indexOf('!['), 'not the image form').to.equal(-1);
+						// A fence only opens at the start of a line.
+						Expect(tmpInserted.charAt(0)).to.equal('\n');
+						return fDone();
+					}
+				);
+				test
+				(
+					'a dropped video goes to the fence and an image to the image form',
+					(fDone) =>
+					{
+						let tmpPict = configureTestPict();
+						let tmpView = tmpPict.addView('Pict-View-TestMDE-Vid2', {}, libPictSectionMarkdownEditor);
+						let tmpInserted = '';
+						tmpView._segmentEditors[0] =
+						{
+							state: { selection: { main: { head: 0 } } },
+							dispatch: (pTransaction) => { tmpInserted = pTransaction.changes.insert; },
+							focus: () => { }
+						};
+						// Stand in for a consumer upload handler: hand back a URL the way a real one would.
+						tmpView.onImageUpload = (pFile, pSegmentIndex, fCallback) =>
+						{
+							fCallback(null, '/1.0/Media/7/Blob');
+							return true;
+						};
+						tmpView._processImageFile({ type: 'video/mp4', name: 'deploy-run.mp4' }, 0);
+						Expect(tmpInserted, 'a video becomes a fence').to.contain('```video');
+						Expect(tmpInserted).to.contain('title: deploy-run');
+						tmpView._processImageFile({ type: 'image/png', name: 'shot.png' }, 0);
+						Expect(tmpInserted, 'an image is unchanged').to.contain('![shot](/1.0/Media/7/Blob)');
+						return fDone();
+					}
+				);
+				test
+				(
+					'a video with no upload handler is refused rather than inlined as base64',
+					(fDone) =>
+					{
+						// A data URI of a recording is megabytes of text pasted into the document, which
+						// every later save and read pays for. There is nowhere to put it, so it says so.
+						let tmpPict = configureTestPict();
+						let tmpView = tmpPict.addView('Pict-View-TestMDE-Vid3', {}, libPictSectionMarkdownEditor);
+						let tmpInserted = '';
+						tmpView._segmentEditors[0] =
+						{
+							state: { selection: { main: { head: 0 } } },
+							dispatch: (pTransaction) => { tmpInserted = pTransaction.changes.insert; },
+							focus: () => { }
+						};
+						tmpView._processImageFile({ type: 'video/mp4', name: 'huge.mp4' }, 0);
+						Expect(tmpInserted, 'nothing was written into the document').to.equal('');
+						return fDone();
+					}
+				);
+				test
+				(
 					'_insertImageMarkdown should be a callable method',
 					(fDone) =>
 					{
